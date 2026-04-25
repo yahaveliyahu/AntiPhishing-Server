@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: antiphishing_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: antiphishing
+
+  seeder:
+    build: .
+    container_name: antiphishing_seeder
+    command: python scripts/seed_db.py
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      DB_NAME: antiphishing
+      # OTX_API_KEY: your_key_here   # optional – enables AlienVault OTX feed
+    depends_on:
+      - mongo
+
+  backend:
+    build: .
+    container_name: antiphishing_backend
+    command: python scripts/app.py
+    ports:
+      - "5000:5000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      DB_NAME: antiphishing
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:

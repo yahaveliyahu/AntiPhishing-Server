@@ -1,0 +1,6 @@
+pymongo>=4.6
+flask>=3.0
+requests>=2.31
+dnspython>=2.4
+cloudscraper>=1.2.71
+schedule>=1.2

@@ -1,0 +1,21 @@
+# Python virtual environment - no need to upload, anyone can recreate it with pip install
+venv/
+
+# Python cache files - auto-generated, not needed
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# PyCharm project settings - personal IDE settings, not project code
+.idea/
+
+# Environment file - in case you ever create a .env file with secrets
+.env
+
+# OS files
+.DS_Store           # Mac
+Thumbs.db           # Windows
+
+# Logs
+*.log
