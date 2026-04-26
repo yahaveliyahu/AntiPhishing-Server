@@ -6,9 +6,6 @@ Endpoints:
     GET  /api/stats          → DB stats
     POST /api/report         → User-reported malicious URL
 
-Run:
-    pip install flask pymongo
-    MONGO_URI=mongodb://localhost:27017 python app.py
 """
 
 import os
@@ -45,13 +42,24 @@ def check_url():
     }
     """
     data = request.get_json(force=True, silent=True) or {}
-    url  = data.get("url", "").strip()
+    url = data.get("url", "").strip()
 
     if not url:
         return jsonify({"error": "url field required"}), 400
 
     # ── Phase 1: DB Lookup ────────────────────────────────────────
     result = lookup.check(url)
+
+    # Whitelisted → immediately safe, skip all analysis
+    if result.get("safe"):
+        return jsonify({
+            "url": url,
+            "is_malicious": False,
+            "confidence": 100,
+            "match_type": "whitelist",
+            "source": None,
+            "explanation": f"This is a known safe site: {result.get('description', '')}.",
+        })
 
     if result["found"]:
         threat = result["threat"]
@@ -80,7 +88,7 @@ def stats():
 def report_url():
     """User-confirmed malicious URL – add to DB for future fast-path hits."""
     data = request.get_json(force=True, silent=True) or {}
-    url  = data.get("url", "").strip()
+    url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "url required"}), 400
     lookup.add_url(url, source="user_report")
@@ -91,9 +99,9 @@ def report_url():
 
 def _build_explanation(result: dict) -> str:
     threat = result["threat"]
-    match  = result["match_type"]
+    match = result["match_type"]
     source = threat.get("source", "unknown")
-    t      = threat.get("type", "malicious")
+    t = threat.get("type", "malicious")
     if match == "url":
         return f"This exact URL is listed as {t} in {source}."
     return f"The domain of this URL is listed as {t} in {source}."

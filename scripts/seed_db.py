@@ -72,13 +72,12 @@ FEEDS = [
     # ── Blacklists ────────────────────────────────────────────────
     {
         "name": "PhishTank",
-        "url": "http://data.phishtank.com/data/online-valid.json",
+        "url": "https://raw.githubusercontent.com/ProKn1fe/phishtank-database/master/online-valid.json",
         "format": "json",
         "parser": "parse_phishtank_json",
         "enabled": True,
         "type": "blacklist",
-        "description": "Community-verified phishing URLs from PhishTank (Public JSON)",
-        "extra_headers": {"Referer": "https://www.phishtank.com/", "App-Key": ""},
+        "description": "PhishTank database via GitHub mirror (updated every 24h)",
     },
     {
         "name": "OpenPhish",
@@ -88,7 +87,7 @@ FEEDS = [
         "enabled": True,
         "type": "blacklist",
         "description": "OpenPhish free phishing URL feed",
-        "ssl_verify": False,
+        "use_legacy_ssl": True,
     },
     {
         "name": "URLhaus_URLs",
@@ -226,14 +225,28 @@ FEEDS = [
         "type": "threat_intel",
         "description": "Ultimate Hosts Blacklist (malware domains)",
     },
+    #  Botvrij_Domains should work and give 20 domains but there is a script block.
+    #  If we need more domains in the future we can use tools like Selenium or Playwright
+    #  which control a real browser (like Chrome) and look exactly like a human browser.
+    #  Websites cannot distinguish between them and a real person.
+    #  Argues that the effort to create these tools is not worth the reward.
     {
         "name": "Botvrij_Domains",
         "url": "https://www.botvrij.eu/data/ioclist.domain.raw",
         "format": "txt",
-        "parser": "parse_plain_domains",
-        "enabled": True,
+        "parser": "parse_botvrij_domains",
+        "enabled": False,
         "type": "threat_intel",
         "description": "Botvrij.eu IOC domain list",
+    },
+    {
+        "name": "C2IntelFeeds_Domains",
+        "url": "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/domainC2s-30day-filter-abused.csv",
+        "format": "csv",
+        "parser": "parse_c2intel_domains",
+        "enabled": True,
+        "type": "threat_intel",
+        "description": "C2IntelFeeds active C2 domains (filtered, 30-day, GitHub daily updated)",
     },
     {
         "name": "Botvrij_URLs",
@@ -535,10 +548,60 @@ def parse_otx(content: bytes, feed: dict) -> list[dict]:
     return records
 
 
+def parse_botvrij_domains(content: bytes, feed: dict) -> list[dict]:
+    """Botvrij domain IOC list – format: domain.com # optional comment"""
+    records = []
+    for line in content.decode("utf-8", errors="replace").splitlines():
+        # Strip inline comments
+        line = line.split("#")[0].strip().lower()
+        if not line:
+            continue
+        domain = extract_domain(line)
+        if domain:
+            records.append({
+                "domain": domain,
+                "source": feed["name"],
+                "type": feed["type"],
+                "extra": {},
+            })
+    return records
+
+
+def parse_c2intel_domains(content: bytes, feed: dict) -> list[dict]:
+    """
+    C2IntelFeeds CSV format:
+    First column is always the domain, optional extra columns (IP, URL, etc.)
+    Header row present: 'domain' or similar.
+    """
+    records = []
+    text = content.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    if not lines:
+        return records
+    # Skip header row
+    for line in lines[1:]:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # First column is the domain
+        domain_raw = line.split(",")[0].strip().strip('"').lower()
+        domain = extract_domain(domain_raw)
+        if domain:
+            records.append({
+                "domain": domain,
+                "source": feed["name"],
+                "type": feed["type"],
+                "extra": {},
+            })
+    return records
+
+
 # Map parser name → function
 PARSERS = {
     "parse_phishtank_json": parse_phishtank_json,
     "parse_plain_urls":  parse_plain_urls,
+    "parse_botvrij_domains": parse_botvrij_domains,
+    "parse_c2intel_domains": parse_c2intel_domains,
     "parse_plain_domains": parse_plain_domains,
     "parse_hosts_file":  parse_hosts_file,
     "parse_urlhaus":     parse_urlhaus,
@@ -573,6 +636,23 @@ def fetch_feed(feed: dict, timeout: int = 60) -> bytes | None:
 
     # Update here to url instead of feed['url'] so that it displays the real address if there is an API
     log.info(f"[{feed['name']}] Fetching {feed['url']}")
+
+    # Legacy SSL fallback for servers with old SSL handshake (e.g. OpenPhish)
+    if feed.get("use_legacy_ssl"):
+        try:
+            import ssl
+            import urllib.request
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return resp.read()
+        except Exception as e:
+            log.warning(f"[{feed['name']}] Legacy SSL error: {e}")
+            return None
+
     try:
         # Create a scraper that simulates a Chrome browser to bypass blocks (like Cloudflare)
         scraper = cloudscraper.create_scraper(browser={

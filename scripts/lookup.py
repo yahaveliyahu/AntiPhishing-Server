@@ -22,11 +22,12 @@ from pymongo.errors import ConnectionFailure
 log = logging.getLogger(__name__)
 
 DEFAULT_MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
-DEFAULT_DB_NAME   = os.environ.get("DB_NAME",   "antiphishing")
+DEFAULT_DB_NAME = os.environ.get("DB_NAME",   "antiphishing")
 
-COLLECTION_URLS    = "malicious_urls"
+COLLECTION_URLS = "malicious_urls"
 COLLECTION_DOMAINS = "malicious_domains"
-COLLECTION_CACHE   = "checked_urls_cache"
+COLLECTION_CACHE = "checked_urls_cache"
+COLLECTION_WHITELIST = "whitelisted_domains"
 
 
 def normalize_url(raw: str) -> str | None:
@@ -83,7 +84,7 @@ class URLLookup:
         db_name:   str = DEFAULT_DB_NAME,
     ):
         self._client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
-        self._db     = self._client[db_name]
+        self._db = self._client[db_name]
         self._ensure_cache_index()
 
     def _ensure_cache_index(self):
@@ -95,13 +96,15 @@ class URLLookup:
 
     def check(self, raw_url: str) -> dict:
         """
-        Main lookup entry point.
-        1. Normalise URL
-        2. Check full URL in malicious_urls
-        3. Check domain in malicious_domains
-        4. Cache result for future fast hits
-        """
-        url    = normalize_url(raw_url)
+            Main lookup entry point.
+            1. Normalise URL
+            2. Cache hit check
+            3. Whitelist check  → return "safe" immediately if found
+            4. Blacklist URL check
+            5. Blacklist domain check
+            6. Not found → proceed to Phase 2 heuristic / ML
+            """
+        url = normalize_url(raw_url)
         domain = extract_domain(raw_url)
 
         if not url and not domain:
@@ -112,7 +115,32 @@ class URLLookup:
         if cached is not None:
             return cached
 
-        # ── 2. Exact URL match ────────────────────────────────────
+        # ── 2. Whitelist check (fast-path safe) ───────────────────
+        if domain:
+            # Check domain and its parent domain (e.g. maps.google.com → google.com)
+            parts = domain.split(".")
+            domains_to_check = [domain]
+            if len(parts) > 2:
+                domains_to_check.append(".".join(parts[-2:]))
+            # Also handle .co.il style TLDs
+            if len(parts) > 3:
+                domains_to_check.append(".".join(parts[-3:]))
+
+            wl_doc = self._db[COLLECTION_WHITELIST].find_one(
+                {"domain": {"$in": domains_to_check}}, {"_id": 0}
+            )
+            if wl_doc:
+                result = {
+                    "found": False,
+                    "safe": True,
+                    "match_type": "whitelist",
+                    "description": wl_doc.get("description", ""),
+                    "category": wl_doc.get("category", ""),
+                }
+                self._cache(url, result)
+                return result
+
+        # ── 3. Exact URL match ────────────────────────────────────
         if url:
             doc = self._db[COLLECTION_URLS].find_one(
                 {"url": url}, {"_id": 0}
@@ -122,7 +150,7 @@ class URLLookup:
                 self._cache(url, result)
                 return result
 
-        # ── 3. Domain match ───────────────────────────────────────
+        # ── 4. Domain match ───────────────────────────────────────
         if domain:
             doc = self._db[COLLECTION_DOMAINS].find_one(
                 {"domain": domain}, {"_id": 0}
@@ -132,7 +160,7 @@ class URLLookup:
                 self._cache(url, result)
                 return result
 
-        # ── 4. Not found → proceed to deep analysis ───────────────
+        # ── 5. Not found → proceed to deep analysis ───────────────
         result = {"found": False}
         self._cache(url, result)
         return result
@@ -142,7 +170,7 @@ class URLLookup:
         Add a newly discovered malicious URL to the DB (used after ML confirms threat).
         This is the 'save new URL to DB' step from the README algorithm.
         """
-        url    = normalize_url(url)
+        url = normalize_url(url)
         domain = extract_domain(url)
         if not url:
             return
@@ -194,7 +222,8 @@ class URLLookup:
 
     def stats(self) -> dict:
         return {
-            "malicious_urls":    self._db[COLLECTION_URLS].count_documents({}),
+            "malicious_urls": self._db[COLLECTION_URLS].count_documents({}),
             "malicious_domains": self._db[COLLECTION_DOMAINS].count_documents({}),
-            "cached_checks":     self._db[COLLECTION_CACHE].count_documents({}),
+            "whitelisted_domains": self._db[COLLECTION_WHITELIST].count_documents({}),
+            "cached_checks": self._db[COLLECTION_CACHE].count_documents({}),
         }
