@@ -16,3 +16,5 @@ tldextract>=3.4
 
 # Domain age check
 python-whois>=0.9
+
+gunicorn>=21.2

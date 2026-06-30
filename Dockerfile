@@ -32,4 +32,4 @@ EXPOSE 5000
 
 # Default command — run the Flask server
 # docker-compose.yml overrides this per service
-CMD ["python", "scripts/app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "scripts.app:app"]
