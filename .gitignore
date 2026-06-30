@@ -19,3 +19,15 @@ Thumbs.db           # Windows
 
 # Logs
 *.log
+
+ml/*.csv
+ml/fetch_commoncrawl.py
+ml/clean_crawl_urls.py
+ml/refine_crawl_urls.py
+ml/Export mongodb.py
+ml/train.py
+ml/evaluate.py
+ml/tranco_safe.csv
+ml/safe_urls.csv
+ml/safe_urls_expanded.csv
+ml/synthetic_phishing.csv
