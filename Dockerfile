@@ -30,6 +30,6 @@ COPY . .
 # Expose Flask port
 EXPOSE 5000
 
-# Default command — run the Flask server
-# docker-compose.yml overrides this per service
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "scripts.app:app"]
+# Default command — run Gunicorn from scripts/ directory
+# chdir to scripts/ so all relative imports (lookup, domain_age etc.) work correctly
+CMD ["gunicorn", "--chdir", "scripts", "--bind", "0.0.0.0:5000", "--workers", "4", "app:app"]
