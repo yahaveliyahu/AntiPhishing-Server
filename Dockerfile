@@ -32,4 +32,4 @@ EXPOSE 5000
 
 # Default command — run Gunicorn from scripts/ directory
 # chdir to scripts/ so all relative imports (lookup, domain_age etc.) work correctly
-CMD ["gunicorn", "--chdir", "scripts", "--bind", "0.0.0.0:5000", "--workers", "4", "app:app"]
+CMD ["gunicorn", "--chdir", "scripts", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "app:app"]
