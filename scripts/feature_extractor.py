@@ -394,6 +394,24 @@ def extract_features(raw_url):
         has_non_ascii_tld,
     ])
 
+    # SaaS hosting platform — these domains host both legitimate and malicious content
+    # Treat as neutral context: don't flag as suspicious just because of the hosting platform
+    # Only becomes meaningful when combined with brand abuse or phishing keywords
+    SAAS_HOSTING_DOMAINS = {
+        "github.io", "vercel.app", "netlify.app", "pages.dev",
+        "web.app", "firebaseapp.com", "powerappsportals.com",
+        "notion.site", "myshopify.com", "zendesk.com",
+        "squarespace.com", "webflow.io", "bubble.io",
+        "glitch.me", "replit.app", "railway.app",
+        "onrender.com", "fly.dev", "azurewebsites.net",
+        "amazonaws.com", "cloudfront.net", "setmore.com",
+        "hubspot.com", "wixsite.com", "wordpress.com",
+        "typeform.com", "airtable.com", "notion.so",
+        "surge.sh",
+    }
+    registrable_for_saas = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
+    is_saas_hosting = 1 if registrable_for_saas in SAAS_HOSTING_DOMAINS else 0
+
     # Deep subdomain abuse — many subdomains + brand + no HTTPS
     # Catches: secure.login.paypal.verify.account.evil.com
     deep_subdomain_abuse = 1 if (
@@ -452,6 +470,7 @@ def extract_features(raw_url):
         "brand_in_subdomain":       brand_in_subdomain,
         "brands_in_subdomain":          brands_in_subdomain,
         "deep_subdomain_abuse":         deep_subdomain_abuse,
+        "is_saas_hosting":              is_saas_hosting,
         "brand_hijack_with_keywords":   brand_hijack_with_keywords,
         "brand_in_path":            brand_in_path,
         "is_suspicious_tld":        is_suspicious_tld,
